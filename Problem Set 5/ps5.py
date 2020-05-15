@@ -1,10 +1,7 @@
-# NOTE : THIS PROBLEM SET IS INCOMPLETE!
-
-
 # 6.0001/6.00 Problem Set 5 - RSS Feed Filter
-# Name:
+# Name: Palash Sharma
 # Collaborators:
-# Time: -> [30 min] + []
+# Time: -> [30 min for NewsStory] + [FOREVER!]
 
 import feedparser
 import string
@@ -133,59 +130,109 @@ class Trigger(object):
 # PHRASE TRIGGERS
 
 # Problem 2
-class Phrasetrigger(Trigger):
+class PhraseTrigger(Trigger):
     def __init__(self, phrase):
         """
         Constructor to initialize a PhraseTrigger object
         
         phrase (string): a phrase to check if it is a trigger
         """
-        self. phrase = phrase
+        self.phrase = phrase
         
     def is_phrase_in(self, text):
-        modified_text = text.lower()
-        final_text = ''
-        for i in modified_text:
-            if not(i in string.punctuation or i == ' '):
-                final_text += i
-            
-        if self.phrase.lower() in final_text:
-            return True
+        no_punct_text = ''.join(ch if ch not in string.punctuation else ' ' for ch in text.upper())
+        cleaned_text = ' '.join(no_punct_text.split()) + ' '
+        no_punct_phrase = ''.join(ch if ch not in string.punctuation else ' '
+                for ch in self.phrase.upper())
+        cleaned_phrase = ' '.join(no_punct_phrase.split()) + ' '
+        if cleaned_phrase not in cleaned_text:
+            return False
         else:
-            return False      
+            return True
+        
         
 # Problem 3
-class TitleTrigger(Phrasetrigger):
+class TitleTrigger(PhraseTrigger):
     def evaluate(self, story):
-        return self.is_phrase_in(story.get_title())
-    
+        return self.is_phrase_in(story.get_title())    
 
 
 # Problem 4
-# TODO: DescriptionTrigger
-
+class DescriptionTrigger(PhraseTrigger):
+    def evaluate(self, story):
+        return self.is_phrase_in(story.get_description())
+    
+    
 # TIME TRIGGERS
 
 # Problem 5
 # TODO: TimeTrigger
-# Constructor:
-#        Input: Time has to be in EST and in the format of "%d %b %Y %H:%M:%S".
-#        Convert time from string to a datetime before saving it as an attribute.
+        
+class TimeTrigger(Trigger):
+    def __init__(self, str_time):
+        """
+        Constructor:
+        Input: Time has to be in EST and in the format of "%d %b %Y %H:%M:%S".
+        Convert time from string to a datetime before saving it as an attribute.
+        """
+        time = datetime.strptime(str_time, "%d %b %Y %H:%M:%S")
+        self.time = time
 
 # Problem 6
 # TODO: BeforeTrigger and AfterTrigger
+class BeforeTrigger(TimeTrigger):
+    def evaluate(self, story):
+        try:
+            result = story.get_pubdate() < self.time
+        except TypeError:
+            self.time = self.time.replace(tzinfo=pytz.timezone("EST"))
+            result = story.get_pubdate() < self.time
+            
+        return result
+        
+
+class AfterTrigger(TimeTrigger):
+    def evaluate(self, story):
+        try:
+            result = story.get_pubdate() > self.time
+        except TypeError:
+            self.time = self.time.replace(tzinfo=pytz.timezone("EST"))
+            result = story.get_pubdate() > self.time
+            
+        return result
+        
 
 
 # COMPOSITE TRIGGERS
 
 # Problem 7
 # TODO: NotTrigger
+class NotTrigger(Trigger):
+    def __init__(self, Trig):
+        self.Trig = Trig
 
+    def evaluate(self, story):
+        return not self.Trig.evaluate(story)
+    
 # Problem 8
 # TODO: AndTrigger
+class AndTrigger(Trigger):
+    def __init__(self, Trig1, Trig2):
+        self.Trig1 = Trig1
+        self.Trig2 = Trig2
+
+    def evaluate(self, story):
+        return self.Trig1.evaluate(story) and self.Trig2.evaluate(story)
 
 # Problem 9
 # TODO: OrTrigger
+class OrTrigger(Trigger):
+    def __init__(self, T1, T2):
+        self.T1 = T1
+        self.T2 = T2
+
+    def evaluate(self, story):
+        return self.T1.evaluate(story) or self.T2.evaluate(story)
 
 
 #======================
@@ -199,10 +246,12 @@ def filter_stories(stories, triggerlist):
 
     Returns: a list of only the stories for which a trigger in triggerlist fires.
     """
-    # TODO: Problem 10
-    # This is a placeholder
-    # (we're just returning all the stories, with no filtering)
-    return stories
+    filtered_stories = []
+    for story in stories:
+        if any([T.evaluate(story) for T in triggerlist]):
+            filtered_stories.append(story) 
+    
+    return filtered_stories
 
 
 
@@ -226,11 +275,33 @@ def read_trigger_config(filename):
         if not (len(line) == 0 or line.startswith('//')):
             lines.append(line)
 
-    # TODO: Problem 11
-    # line is the list of lines that you need to parse and for which you need
-    # to build triggers
+    t_map = {"TITLE": TitleTrigger,
+            "DESCRIPTION": DescriptionTrigger,
+            "AFTER": AfterTrigger,
+            "BEFORE": BeforeTrigger,
+            "NOT": NotTrigger,
+            "AND": AndTrigger,
+            "OR": OrTrigger
+            }
 
-    print(lines) # for now, print it so you see what it contains!
+    trigger_dict = {}
+    trigger_list = [] 
+
+    def line_reader(line):
+        data = line.split(',')
+        if data[0] != "ADD":
+            if data[1] == "OR" or data[1] == "AND":
+                trigger_dict[data[0]] = t_map[data[1]](trigger_dict[data[2]],
+                        trigger_dict[data[3]])
+            else:
+                trigger_dict[data[0]] = t_map[data[1]](data[2])
+        else: 
+            trigger_list[:] += [trigger_dict[t] for t in data[1:]]
+
+    for line in lines:
+        line_reader(line)
+    
+    return trigger_list
 
 
 
@@ -248,7 +319,7 @@ def main_thread(master):
 
         # Problem 11
         # TODO: After implementing read_trigger_config, uncomment this line 
-        # triggerlist = read_trigger_config('triggers.txt')
+        triggerlist = read_trigger_config('triggers.txt')
         
         # HELPER CODE - you don't need to understand this!
         # Draws the popup window that displays the filtered stories
